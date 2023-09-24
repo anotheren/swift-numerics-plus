@@ -3,6 +3,7 @@ import Foundation
 
 extension Real {
     
+    /// 线性拟合
     public static func polyfit<C: Collection<Self>>(x: C, y: C, degree: Int) -> [Self] {
         assert(!x.isEmpty && !y.isEmpty && x.count == y.count && degree >= 1)
         
