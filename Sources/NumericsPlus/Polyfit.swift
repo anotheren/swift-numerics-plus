@@ -57,9 +57,17 @@ extension Real {
 
         // Check if all y values are identical (perfectly collinear)
         let firstY = yArray.first!
-        let allIdentical = yArray.allSatisfy { $0 == firstY }
+        let tolerance = max(Self.leastNonzeroMagnitude * 1000, Self.ulpOfOne * 1000)
+        let yRange = yArray.max()! - yArray.min()!
+        let allIdentical = yArray.allSatisfy { abs($0 - firstY) < tolerance }
+        if debug {
+            print("📊 Y range analysis:")
+            print("   yRange: \(yRange)")
+            print("   tolerance: \(tolerance)")
+            print("   allIdentical: \(allIdentical)")
+        }
         if allIdentical {
-            if debug { print("📈 All y values are identical, returning horizontal line") }
+            if debug { print("📈 All y values are identical (within tolerance), returning horizontal line") }
             // Return horizontal line (slope = 0, intercept = y_value)
             var result = [Self](repeating: 0, count: degree + 1)
             result[0] = 0  // slope = 0
@@ -72,13 +80,24 @@ extension Real {
         // Enhanced matrix construction with numerical stability
         var matrix = (0..<degree+1).map { power in
             (0..<degree+1).map { (col) -> Self in
-                let xs = xArray.map { pow($0, Self(power) + Self(col)) }
+                let exponent = Self(power) + Self(col)
+                let xs = xArray.map { x in
+                    if x == 0 && exponent == 0 {
+                        return 1 as Self  // 0^0 = 1 by convention
+                    }
+                    return pow(x, exponent)
+                }
                 let sum = Self.sum(xs)
 
                 // Check for numerical overflow/underflow
                 if !sum.isFinite {
-                    if debug { print("⚠️ WARNING: Matrix construction overflow at power \(power), col \(col)") }
+                    if debug { print("⚠️ WARNING: Matrix construction overflow at power \(power), col \(col), exponent: \(exponent)") }
                     return 0
+                }
+
+                // Additional check for suspicious zero values (shouldn't happen for exponent 0)
+                if exponent == 0 && sum == 0 {
+                    if debug { print("⚠️ WARNING: Unexpected zero sum for exponent 0 at power \(power), col \(col)") }
                 }
                 return sum
             }
@@ -86,7 +105,15 @@ extension Real {
 
         // Enhanced vector construction with numerical stability
         var vector = (0...degree).map { power -> Self in
-            let v = zip(xArray, yArray).map { pow($0, Self(power)) * $1 }
+            let v = zip(xArray, yArray).map { x, y in
+                    let powResult: Self
+                    if x == 0 && Self(power) == 0 {
+                        powResult = 1 as Self  // 0^0 = 1 by convention
+                    } else {
+                        powResult = pow(x, Self(power))
+                    }
+                    return powResult * y
+                }
             let sum = Self.sum(v)
 
             // Check for numerical overflow/underflow
@@ -116,14 +143,19 @@ extension Real {
                 }
             }
 
-            // Enhanced tolerance calculation
+            // Enhanced tolerance calculation - less strict for better numerical stability
             let tolerance = max(
                 Self.leastNonzeroMagnitude * 1000,
-                Self.ulpOfOne * 1000
+                Self.ulpOfOne * 1000000  // Increased tolerance
             )
 
             if maxVal < tolerance {
-                if debug { print("⚠️ WARNING: Matrix is singular or nearly singular at row \(row), maxVal: \(maxVal)") }
+                if debug {
+                    print("⚠️ WARNING: Matrix is singular or nearly singular at row \(row)")
+                    print("   maxVal: \(maxVal)")
+                    print("   tolerance: \(tolerance)")
+                    print("   matrix[\(row)][\(row)]: \(matrix[row][row])")
+                }
                 // Set remaining rows to zero
                 for i in row..<degree+1 {
                     matrix[row][i] = 0
@@ -178,10 +210,10 @@ extension Real {
                 sum += matrix[row][column] * ans[column]
             }
 
-            // Enhanced safety check
+            // Enhanced safety check - less strict for better numerical stability
             let tolerance = max(
                 Self.leastNonzeroMagnitude * 1000,
-                Self.ulpOfOne * 1000
+                Self.ulpOfOne * 1000000  // Increased tolerance
             )
 
             if abs(matrix[row][row]) < tolerance {
